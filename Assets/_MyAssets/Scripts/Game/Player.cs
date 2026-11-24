@@ -1,9 +1,13 @@
 ﻿using System;
 using UnityEngine;
+using Unity.Cinemachine;
 
 [RequireComponent(typeof(Rigidbody2D))]
 public class Player : MonoBehaviour
 {
+    private const string TurnLeftParameter = "TurnLeft";
+    private const string TurnRightParameter = "TurnRight";
+
     // À COMPLÉTER 9.2 : les noms des paramètres de l'Animator et le seuil
 
     [Header("Déplacement")]
@@ -11,6 +15,9 @@ public class Player : MonoBehaviour
     [SerializeField] private float _moveSpeed = 8f;
     [Tooltip("Hauteur maximale du vaisseau, en unités du monde")]
     [SerializeField] private float _maxHeight = 0f;
+    [Tooltip("Zone morte du déplacement")]
+    [SerializeField] private float _TurmThreshold = 0.1f;
+
 
     [Header("Tir")]
     [Tooltip("Insérer le laser qui sera tiré")]
@@ -18,12 +25,15 @@ public class Player : MonoBehaviour
     [SerializeField] private Transform _firePoint;
     [Tooltip("Délai minimal entre deux tirs, en secondes")]
     [SerializeField] private float _fireDelay = 0.3f;
+    [SerializeField] private AudioClip _fireSound;
 
     [Header("Vies")]
     [Tooltip("Nombre de vies au début de la partie")]
     [SerializeField] private int _maxLives = 3;
     [Tooltip("Explosion créée à la destruction du vaisseau")]
     [SerializeField] private GameObject _explosionPrefab;
+
+    [SerializeField] private GameObject[] _damageEffects;
 
 
     /* BLOC 13-4.4 À ACTIVER : effacez cette ligne et la ligne de fin du bloc
@@ -35,7 +45,7 @@ public class Player : MonoBehaviour
 
     private Rigidbody2D _rb;
     private GameInput _gameInput;
-    // À COMPLÉTER 9.2 : l'Animator du visuel
+    private Animator _animator;
     private SpriteRenderer _spriteRenderer;
     private Vector2 _moveInput;
     private Vector2 _minPosition;
@@ -43,6 +53,9 @@ public class Player : MonoBehaviour
     private float _nextFireTime;
     private bool _isFireHeld;
     private int _lives;
+    private AudioSource _audioSource;
+
+    private CinemachineImpulseSource _impulseSource;
     /* BLOC 13-4.4 À ACTIVER : effacez cette ligne et la ligne de fin du bloc
     private float _currentFireDelay;
     private bool _hasShield;
@@ -61,12 +74,13 @@ public class Player : MonoBehaviour
 
     private void Awake()
     {
+        _impulseSource = GetComponent<CinemachineImpulseSource>();
         _rb = GetComponent<Rigidbody2D>();
+        _audioSource = GetComponent<AudioSource>();
         // Un seul GameInput dans la scène : le code le trouve lui-même
         _gameInput = FindAnyObjectByType<GameInput>();
 
-        // Le visuel est un enfant du joueur, comme au cours 5
-        // À COMPLÉTER 9.2 : récupérer l'Animator du visuel
+        _animator = GetComponentInChildren<Animator>();
         _spriteRenderer = GetComponentInChildren<SpriteRenderer>();
 
         _lives = _maxLives;
@@ -99,7 +113,9 @@ public class Player : MonoBehaviour
     {
         // Entrées lues à chaque image ; le déplacement attend FixedUpdate
         _moveInput = _gameInput.GetMovementVectorNormalized();
-        // À COMPLÉTER 9.2 : transmettre le déplacement à l'Animator
+
+        _animator.SetBool(TurnLeftParameter, _moveInput.x < -_TurmThreshold);
+        _animator.SetBool(TurnRightParameter, _moveInput.x > _TurmThreshold);
 
         // Tir continu tant que le bouton reste enfoncé
         if (_isFireHeld && Time.time >= _nextFireTime)
@@ -144,11 +160,18 @@ public class Player : MonoBehaviour
         _lives--;
         LivesChanged?.Invoke(_lives);
 
+        int damageIndex = _maxLives - _lives - 1;
+        if(damageIndex < _damageEffects.Length)
+        {
+            _damageEffects[damageIndex].SetActive(true);
+        }
+
         if (_lives > 0)
         {
             return;
         }
 
+        _impulseSource.GenerateImpulse();
         Instantiate(_explosionPrefab, transform.position, Quaternion.identity);
         Died?.Invoke();
         Destroy(gameObject);
@@ -167,6 +190,7 @@ public class Player : MonoBehaviour
     private void Fire()
     {
         Instantiate(_laserPrefab, _firePoint.position, Quaternion.identity);
+        _audioSource.PlayOneShot(_fireSound);
         _nextFireTime = Time.time + _fireDelay;
     }
 
